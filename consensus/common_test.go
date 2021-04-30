@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -13,9 +14,10 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/term"
+	"github.com/ipfs/go-ipfs/core/coreapi"
+	coremock "github.com/ipfs/go-ipfs/core/mock"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
-
-	"path"
 
 	abcicli "github.com/lazyledger/lazyledger-core/abci/client"
 	"github.com/lazyledger/lazyledger-core/abci/example/counter"
@@ -191,7 +193,8 @@ func decideProposal(
 	round int32,
 ) (proposal *types.Proposal, block *types.Block) {
 	cs1.mtx.Lock()
-	block, blockParts := cs1.createProposalBlock()
+	block = cs1.createProposalBlock()
+	cs1.shareProposalBlock(block)
 	validRound := cs1.ValidRound
 	chainID := cs1.state.ChainID
 	cs1.mtx.Unlock()
@@ -200,7 +203,7 @@ func decideProposal(
 	}
 
 	// Make proposal
-	polRound, propBlockID := validRound, types.BlockID{Hash: block.Hash(), PartSetHeader: blockParts.Header()}
+	polRound, propBlockID := validRound, types.BlockID{Hash: block.Hash()}
 	proposal = types.NewProposal(height, round, polRound, propBlockID, &block.DataAvailabilityHeader)
 	p, err := proposal.ToProto()
 	if err != nil {
@@ -425,7 +428,7 @@ func loadPrivValidator(config *cfg.Config) *privval.FilePV {
 	return privValidator
 }
 
-func randState(nValidators int) (*State, []*validatorStub) {
+func randState(t *testing.T, nValidators int) (*State, []*validatorStub) {
 	// Get State
 	state, privVals := randGenesisState(nValidators, false, 10)
 
@@ -439,7 +442,43 @@ func randState(nValidators int) (*State, []*validatorStub) {
 	// since cs1 starts at 1
 	incrementHeight(vss[1:]...)
 
-	return cs, vss
+	return withIPFS(t, cs), vss
+}
+
+func withIPFS(t *testing.T, s *State) *State {
+	ipfsNode, err := coremock.NewMockNode()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s.IpfsAPI, err = coreapi.NewCoreAPI(ipfsNode)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return s
+}
+
+func withIPFSNet(t *testing.T, ss []*State) []*State {
+	ctx := context.TODO()
+	net, err := mocknet.FullMeshConnected(ctx, len(ss))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range ss {
+		nd, err := coremock.MockPublicNode(ctx, net)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		s.IpfsAPI, err = coreapi.NewCoreAPI(nd)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return ss
 }
 
 //-------------------------------------------------------------------------------
