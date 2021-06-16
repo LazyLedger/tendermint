@@ -57,7 +57,7 @@ type BlockchainReactor struct {
 
 	blockExec *sm.BlockExecutor
 	store     *store.BlockStore
-	pool      *BlockPool
+	pool      *HeaderPool
 	fastSync  bool
 
 	requestsCh <-chan BlockRequest
@@ -175,18 +175,19 @@ func (bcR *BlockchainReactor) RemovePeer(peer p2p.Peer, reason interface{}) {
 
 // respondToPeer loads a block and sends it to the requesting peer,
 // if we have it. Otherwise, we'll respond saying we don't have it.
-func (bcR *BlockchainReactor) respondToPeer(msg *bcproto.BlockRequest,
+func (bcR *BlockchainReactor) respondToPeer(msg *bcproto.HeaderRequest,
 	src p2p.Peer) (queued bool) {
 
-	block := bcR.store.LoadBlock(msg.Height)
-	if block != nil {
-		bl, err := block.ToProto()
+	header, daHeader := bcR.store.LoadHeader(msg.Height)
+	if header != nil || daHeader != nil {
+		h := header.ToProto()
+		dah, err := daHeader.ToProto()
 		if err != nil {
 			bcR.Logger.Error("could not convert msg to protobuf", "err", err)
 			return false
 		}
 
-		msgBytes, err := bc.EncodeMsg(&bcproto.BlockResponse{Block: bl})
+		msgBytes, err := bc.EncodeMsg(&bcproto.HeaderResponse{Header: h, DataAvailabilityHeader: dah})
 		if err != nil {
 			bcR.Logger.Error("could not marshal msg", "err", err)
 			return false
@@ -197,7 +198,7 @@ func (bcR *BlockchainReactor) respondToPeer(msg *bcproto.BlockRequest,
 
 	bcR.Logger.Info("Peer asking for a block we don't have", "src", src, "height", msg.Height)
 
-	msgBytes, err := bc.EncodeMsg(&bcproto.NoBlockResponse{Height: msg.Height})
+	msgBytes, err := bc.EncodeMsg(&bcproto.NoHeaderResponse{Height: msg.Height})
 	if err != nil {
 		bcR.Logger.Error("could not convert msg to protobuf", "err", err)
 		return false
@@ -228,16 +229,10 @@ func (bcR *BlockchainReactor) Receive(chID byte, src p2p.Peer, msgBytes []byte) 
 	logger.Debug("Receive", "msg", msg)
 
 	switch msg := msg.(type) {
-	case *bcproto.BlockRequest:
+	case *bcproto.HeaderRequest:
 		bcR.respondToPeer(msg, src)
-	case *bcproto.BlockResponse:
-		bi, err := types.BlockFromProto(msg.Block)
-		if err != nil {
-			logger.Error("Block content is invalid", "err", err)
-			bcR.Switch.StopPeerForError(src, err)
-			return
-		}
-		bcR.pool.AddBlock(src.ID(), bi, len(msgBytes))
+	case *bcproto.HeaderResponse:
+		bcR.pool.AddBlock(src.ID(), msg, len(msgBytes))
 	case *bcproto.StatusRequest:
 		// Send peer our state.
 		msgBytes, err := bc.EncodeMsg(&bcproto.StatusResponse{
@@ -245,14 +240,14 @@ func (bcR *BlockchainReactor) Receive(chID byte, src p2p.Peer, msgBytes []byte) 
 			Base:   bcR.store.Base(),
 		})
 		if err != nil {
-			logger.Error("could not convert msg to protobut", "err", err)
+			logger.Error("could not convert msg to protobuf", "err", err)
 			return
 		}
 		src.TrySend(BlockchainChannel, msgBytes)
 	case *bcproto.StatusResponse:
 		// Got a peer status. Unverified.
 		bcR.pool.SetPeerRange(src.ID(), msg.Base, msg.Height)
-	case *bcproto.NoBlockResponse:
+	case *bcproto.NoHeaderResponse:
 		logger.Debug("Peer does not have requested block", "height", msg.Height)
 	default:
 		logger.Error(fmt.Sprintf("Unknown message type %v", reflect.TypeOf(msg)))
@@ -294,7 +289,7 @@ func (bcR *BlockchainReactor) poolRoutine(stateSynced bool) {
 					bcR.Logger.Debug("Can't send request: no peer", "peer_id", request.PeerID)
 					continue
 				}
-				msgBytes, err := bc.EncodeMsg(&bcproto.BlockRequest{Height: request.Height})
+				msgBytes, err := bc.EncodeMsg(&bcproto.HeaderRequest{Height: request.Height})
 				if err != nil {
 					bcR.Logger.Error("could not convert BlockRequest to proto", "err", err)
 					continue
@@ -383,22 +378,27 @@ FOR_LOOP:
 			}
 
 			var (
-				firstParts         = first.MakePartSet(types.BlockPartSizeBytes)
-				firstPartSetHeader = firstParts.Header()
-				firstID            = types.BlockID{Hash: first.Hash(), PartSetHeader: firstPartSetHeader}
+				// 	firstParts         = first.MakePartSet(types.BlockPartSizeBytes)
+				// 	firstPartSetHeader = firstParts.Header()
+				firstID = types.BlockID{Hash: first.Commit.HeaderHash}
 			)
+
+			c, err := types.CommitFromProto(second.Commit)
+			if err != nil {
+				panic(err)
+			}
 
 			// Finally, verify the first block using the second's commit
 			// NOTE: we can probably make this more efficient, but note that calling
 			// first.Hash() doesn't verify the tx contents, so MakePartSet() is
 			// currently necessary.
-			err := state.Validators.VerifyCommitLight(chainID, firstID, first.Height, second.LastCommit)
+			err = state.Validators.VerifyCommitLight(chainID, firstID, first.Header.Height, c)
 			if err != nil {
 				err = fmt.Errorf("invalid last commit: %w", err)
 				bcR.Logger.Error(err.Error(),
-					"last_commit", second.LastCommit, "block_id", firstID, "height", first.Height)
+					"last_commit", second.Commit, "block_id", firstID, "height", first.Header.Height)
 
-				peerID := bcR.pool.RedoRequest(first.Height)
+				peerID := bcR.pool.RedoRequest(first.Header.Height)
 				peer := bcR.Switch.Peers().Get(peerID)
 				if peer != nil {
 					// NOTE: we've already removed the peer's request, but we still need
@@ -406,7 +406,7 @@ FOR_LOOP:
 					bcR.Switch.StopPeerForError(peer, err)
 				}
 
-				peerID2 := bcR.pool.RedoRequest(second.Height)
+				peerID2 := bcR.pool.RedoRequest(second.Header.Height)
 				if peerID2 != peerID {
 					if peer2 := bcR.Switch.Peers().Get(peerID2); peer2 != nil {
 						bcR.Switch.StopPeerForError(peer2, err)
@@ -417,17 +417,27 @@ FOR_LOOP:
 			} else {
 				bcR.pool.PopRequest()
 
+				h, err2 := types.HeaderFromProto(first.Header)
+				if err2 != nil {
+					panic(err2)
+				}
+
+				dah, err2 := types.DataAvailabilityHeaderFromProto(first.DataAvailabilityHeader)
+				if err2 != nil {
+					panic(err2)
+				}
+
 				// TODO: batch saves so we dont persist to disk every block
-				bcR.store.SaveBlock(first, firstParts, second.LastCommit)
+				bcR.store.SaveHeader(&h, dah, c)
 
 				// TODO: same thing for app - but we would need a way to get the hash
 				// without persisting the state.
-				var err error
-				state, _, err = bcR.blockExec.ApplyBlock(state, firstID, first)
-				if err != nil {
-					// TODO This is bad, are we zombie?
-					panic(fmt.Sprintf("Failed to process committed block (%d:%X): %v", first.Height, first.Hash(), err))
-				}
+				// var err error
+				// state, _, err = bcR.blockExec.ApplyBlock(state, firstID, first)
+				// if err != nil {
+				// 	// TODO This is bad, are we zombie?
+				// 	panic(fmt.Sprintf("Failed to process committed block (%d:%X): %v", first.Header.Height, first.Header.Hash(), err))
+				// }
 				blocksSynced++
 
 				if blocksSynced%100 == 0 {

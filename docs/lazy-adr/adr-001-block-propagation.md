@@ -81,16 +81,18 @@ type BlockStore interface {
  Height() int64
  Size() int64
 
- LoadBlockMeta(height int64) *types.BlockMeta
- LoadHeader(height int64) *types.Header
- LoadDAHeader(height int64) *types.DataAvailabilityHeader
+ LoadBlockMeta(context.Context, int64) (*types.BlockMeta, error)
+ // used for fetching the block from a specified IPFS
+ LoadBlock(context.Context,  int64) (*types.Block, error)
+ LoadHeader( int64) *types.Header
+ LoadDAHeader( int64) *types.DataAvailabilityHeader
 
- SaveHeaders(header *types.Header, daHeader *types.DataAvailabilityHeader, seenCommit *types.Commit)
+ SaveHeaders(*types.Header, *types.DataAvailabilityHeader, *types.Commit)
 
- PruneHeaders(height int64) (uint64, error)
+ PruneHeaders( int64) (uint64, error)
 
- LoadBlockCommit(height int64) *types.Commit
- LoadSeenCommit(height int64) *types.Commit
+ LoadBlockCommit( int64) *types.Commit
+ LoadSeenCommit( int64) *types.Commit
 }
 ```
 
@@ -107,7 +109,6 @@ The goal is to not change the public interface for RPC's. It is yet to be seen i
 ## Status
 
 Proposed
-
 
 ### Positive
 

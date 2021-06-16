@@ -28,7 +28,7 @@ type testPeer struct {
 
 type inputData struct {
 	t       *testing.T
-	pool    *BlockPool
+	pool    *HeaderPool
 	request BlockRequest
 }
 
