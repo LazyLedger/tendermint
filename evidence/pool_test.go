@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	mdutils "github.com/ipfs/go-merkledag/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -175,6 +176,8 @@ func TestEvidencePoolUpdate(t *testing.T) {
 		val, evidenceChainID)
 	lastCommit := makeCommit(height, val.PrivKey.PubKey().Address())
 	block := types.MakeBlock(height+1, []types.Tx{}, []types.Evidence{ev}, nil, types.Messages{}, lastCommit)
+	_, err = block.RowSet(context.TODO(), mdutils.Mock())
+	require.NoError(t, err)
 	// update state (partially)
 	state.LastBlockHeight = height + 1
 	state.LastBlockTime = defaultEvidenceTime.Add(22 * time.Minute)
@@ -400,15 +403,18 @@ func initializeBlockStore(db dbm.DB, state sm.State, valAddr []byte) *store.Bloc
 
 	for i := int64(1); i <= state.LastBlockHeight; i++ {
 		lastCommit := makeCommit(i-1, valAddr)
-		block, _ := state.MakeBlock(i, []types.Tx{}, nil, nil,
+		block := state.MakeBlock(i, []types.Tx{}, nil, nil,
 			types.Messages{}, lastCommit, state.Validators.GetProposer().Address)
 		block.Header.Time = defaultEvidenceTime.Add(time.Duration(i) * time.Minute)
 		block.Header.Version = tmversion.Consensus{Block: version.BlockProtocol, App: 1}
 		const parts = 1
 		partSet := block.MakePartSet(parts)
-
+		_, err := block.RowSet(context.TODO(), mdutils.Mock())
+		if err != nil {
+			panic(err)
+		}
 		seenCommit := makeCommit(i, valAddr)
-		err := blockStore.SaveBlock(context.TODO(), block, partSet, seenCommit)
+		err = blockStore.SaveBlock(context.TODO(), block, partSet, seenCommit)
 		if err != nil {
 			panic(err)
 		}
