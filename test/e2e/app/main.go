@@ -159,7 +159,7 @@ func startSigner(cfg *Config) error {
 	var dialFn privval.SocketDialer
 	switch protocol {
 	case "tcp":
-		dialFn = privval.DialTCPFn(address, 3*time.Second, ed25519.GenPrivKey())
+		dialFn = privval.DialTCPFn(address, 20*time.Second, ed25519.GenPrivKey())
 	case "unix":
 		dialFn = privval.DialUnixFn(address)
 	default:
@@ -191,6 +191,7 @@ func setupNode() (*config.Config, log.Logger, *p2p.NodeKey, error) {
 		return nil, nil, nil, err
 	}
 	tmcfg = config.DefaultConfig()
+	tmcfg.RPC.TimeoutBroadcastTxCommit = time.Second * 120
 	err = viper.Unmarshal(tmcfg)
 	if err != nil {
 		return nil, nil, nil, err

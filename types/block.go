@@ -32,7 +32,7 @@ const (
 	// MaxHeaderBytes is a maximum header size.
 	// NOTE: Because app hash can be of arbitrary size, the header is therefore not
 	// capped in size and thus this number should be seen as a soft max
-	MaxHeaderBytes int64 = 636
+	MaxHeaderBytes int64 = 840
 
 	// MaxOverheadForBlock - maximum overhead to encode a block (up to
 	// MaxBlockSizeBytes in size) not including it's parts except Data.
@@ -100,9 +100,10 @@ func (dah *DataAvailabilityHeader) Equals(to *DataAvailabilityHeader) bool {
 
 // Hash computes and caches the merkle root of the row and column roots.
 func (dah *DataAvailabilityHeader) Hash() []byte {
-	if dah == nil {
-		return merkle.HashFromByteSlices(nil)
+	if dah.IsZero() {
+		dah = MinDataAvailabilityHeader()
 	}
+
 	if len(dah.hash) != 0 {
 		return dah.hash
 	}
@@ -122,23 +123,93 @@ func (dah *DataAvailabilityHeader) Hash() []byte {
 	return dah.hash
 }
 
-func (dah *DataAvailabilityHeader) ToProto() (*tmproto.DataAvailabilityHeader, error) {
+// ValidateBasic runs stateless checks on the DataAvailabilityHeader. Calls Hash() if not already called
+func (dah *DataAvailabilityHeader) ValidateBasic() error {
 	if dah == nil {
-		return nil, errors.New("nil DataAvailabilityHeader")
+		return errors.New("nil header is invalid")
+	}
+	if dah.IsZero() {
+		return errors.New("must have at least one row and column roots")
+	}
+	if len(dah.ColumnRoots) != len(dah.RowsRoots) {
+		return fmt.Errorf(
+			"unequal number of row and column roots: row %d col %d",
+			len(dah.RowsRoots),
+			len(dah.ColumnRoots),
+		)
+	}
+
+	return nil
+}
+
+func (dah *DataAvailabilityHeader) IsZero() bool {
+	if dah == nil {
+		return true
+	}
+	return len(dah.ColumnRoots) == 0 || len(dah.RowsRoots) == 0
+}
+
+// MinDataAvailabilityHeader returns a hard coded copy of a data availability
+// header from empty block data
+func MinDataAvailabilityHeader() *DataAvailabilityHeader {
+	first, err := namespace.IntervalDigestFromBytes(
+		consts.NamespaceSize,
+		[]byte{
+			255, 255, 255, 255, 255, 255, 255, 254, 255, 255, 255, 255, 255, 255, 255, 254, 102, 154, 168, 240,
+			216, 82, 33, 160, 91, 111, 9, 23, 136, 77, 48, 97, 106, 108, 125, 83, 48, 165, 100, 10, 8, 160, 77,
+			204, 91, 9, 47, 79,
+		},
+	)
+	if err != nil {
+		panic(err)
+	}
+	second, err := namespace.IntervalDigestFromBytes(
+		consts.NamespaceSize,
+		[]byte{
+			255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 41, 52, 55, 243,
+			182, 165, 97, 30, 37, 201, 13, 90, 68, 184, 76, 196, 179, 114, 12, 219, 166, 133, 83, 222, 254,
+			139, 113, 154, 241, 245, 195, 149,
+		},
+	)
+	if err != nil {
+		panic(err)
+	}
+	dah := &DataAvailabilityHeader{
+		RowsRoots: []namespace.IntervalDigest{
+			first, second,
+		},
+		ColumnRoots: []namespace.IntervalDigest{
+			first, second,
+		},
+		hash: []byte{
+			4, 122, 211, 141, 172, 30, 22, 215, 241, 73, 77, 225, 174, 40, 53, 252, 106, 158, 117, 238,
+			88, 77, 86, 66, 235, 146, 121, 62, 161, 36, 160, 111,
+		},
+	}
+	return dah
+}
+
+func (dah *DataAvailabilityHeader) ToProto() *tmproto.DataAvailabilityHeader {
+	if dah == nil {
+		return nil
 	}
 
 	dahp := new(tmproto.DataAvailabilityHeader)
 	dahp.RowRoots = dah.RowsRoots.Bytes()
 	dahp.ColumnRoots = dah.ColumnRoots.Bytes()
-	return dahp, nil
+	return dahp
 }
 
 func DataAvailabilityHeaderFromProto(dahp *tmproto.DataAvailabilityHeader) (dah *DataAvailabilityHeader, err error) {
 	if dahp == nil {
-		return nil, errors.New("nil DataAvailabilityHeader")
+		return nil, nil
 	}
 
 	dah = new(DataAvailabilityHeader)
+	if len(dahp.ColumnRoots) == 0 {
+		return dah, nil
+	}
+
 	dah.RowsRoots, err = NmtRootsFromBytes(dahp.RowRoots)
 	if err != nil {
 		return
@@ -149,7 +220,11 @@ func DataAvailabilityHeaderFromProto(dahp *tmproto.DataAvailabilityHeader) (dah 
 		return
 	}
 
-	return
+	if len(dah.hash) == 0 {
+		dah.Hash()
+	}
+
+	return dah, nil
 }
 
 // Block defines the atomic unit of a Tendermint blockchain.
@@ -213,7 +288,7 @@ func (b *Block) fillHeader() {
 	if b.LastCommitHash == nil {
 		b.LastCommitHash = b.LastCommit.Hash()
 	}
-	if b.DataHash == nil || b.DataAvailabilityHeader.hash == nil {
+	if b.DataHash == nil || b.DataAvailabilityHeader.hash == nil || len(b.DataHash) == 0 {
 		b.fillDataAvailabilityHeader()
 	}
 	if b.EvidenceHash == nil {
@@ -378,16 +453,11 @@ func (b *Block) ToProto() (*tmproto.Block, error) {
 		return nil, err
 	}
 
-	pdah, err := b.DataAvailabilityHeader.ToProto()
-	if err != nil {
-		return nil, err
-	}
-
 	pb.Header = *b.Header.ToProto()
 	pb.LastCommit = b.LastCommit.ToProto()
 	pb.Data = b.Data.ToProto()
 	pb.Data.Evidence = *protoEvidence
-	pb.DataAvailabilityHeader = pdah
+	pb.DataAvailabilityHeader = b.DataAvailabilityHeader.ToProto()
 	return pb, nil
 }
 
@@ -418,6 +488,7 @@ func BlockFromProto(bp *tmproto.Block) (*Block, error) {
 		return nil, err
 	}
 	b.DataAvailabilityHeader = *dah
+
 	if bp.LastCommit != nil {
 		lc, err := CommitFromProto(bp.LastCommit)
 		if err != nil {
@@ -483,8 +554,9 @@ func MakeBlock(
 	lastCommit *Commit) *Block {
 	block := &Block{
 		Header: Header{
-			Version: tmversion.Consensus{Block: version.BlockProtocol, App: 0},
-			Height:  height,
+			Version:     tmversion.Consensus{Block: version.BlockProtocol, App: 0},
+			Height:      height,
+			LastBlockID: lastCommit.BlockID,
 		},
 		Data: Data{
 			Txs:                    txs,
@@ -637,8 +709,9 @@ func (h *Header) Hash() tmbytes.HexBytes {
 		return nil
 	}
 
-	pbbi := h.LastBlockID.ToProto()
-	bzbi, err := pbbi.Marshal()
+	pBID := h.LastBlockID.ToProto()
+
+	bzbi, err := pBID.Marshal()
 	if err != nil {
 		return nil
 	}
@@ -775,9 +848,11 @@ const (
 const (
 	// Max size of commit without any commitSigs -> 82 for BlockID, 8 for Height, 4 for Round.
 	MaxCommitOverheadBytes int64 = 94
-	// Commit sig size is made up of 64 bytes for the signature, 20 bytes for the address,
-	// 1 byte for the flag and 14 bytes for the timestamp
-	MaxCommitSigBytes int64 = 109
+	// Commit sig size is made up of 64 bytes for the signature, 20 bytes for
+	// the address, 1 byte for the flag and 14 bytes for the timestamp
+	// todo(evan): change back to something reasonable once the blockID is
+	// replaced with the header hash
+	MaxCommitSigBytes int64 = 313
 )
 
 // CommitSig is a part of the Vote included in a Commit.
@@ -842,11 +917,11 @@ func (cs CommitSig) BlockID(commitBlockID BlockID) BlockID {
 	var blockID BlockID
 	switch cs.BlockIDFlag {
 	case BlockIDFlagAbsent:
-		blockID = BlockID{}
+		blockID = EmptyBlockID()
 	case BlockIDFlagCommit:
 		blockID = commitBlockID
 	case BlockIDFlagNil:
-		blockID = BlockID{}
+		blockID = EmptyBlockID()
 	default:
 		panic(fmt.Sprintf("Unknown BlockIDFlag: %v", cs.BlockIDFlag))
 	}
@@ -1245,7 +1320,9 @@ func (msgs Messages) splitIntoShares() NamespacedShares {
 }
 
 // ComputeShares splits block data into shares of an original data square and
-// returns them along with an amount of non-redundant shares.
+// returns them along with an amount of non-redundant shares. To enforce non nil
+// squares, empty Data results in a single zero padded share with a Tailpadded
+// namespace.
 func (data *Data) ComputeShares() (NamespacedShares, int) {
 	// TODO(ismail): splitting into shares should depend on the block size and layout
 	// see: https://github.com/lazyledger/lazyledger-specs/blob/master/specs/block_proposer.md#laying-out-transactions-and-messages
@@ -1546,8 +1623,30 @@ func (data *EvidenceData) splitIntoShares() NamespacedShares {
 
 // BlockID
 type BlockID struct {
-	Hash          tmbytes.HexBytes `json:"hash"`
-	PartSetHeader PartSetHeader    `json:"part_set_header"`
+	Hash                   tmbytes.HexBytes        `json:"hash"`
+	PartSetHeader          PartSetHeader           `json:"part_set_header"`
+	DataAvailabilityHeader *DataAvailabilityHeader `json:"data_availability_header"`
+}
+
+// NewBlockID issues a new BlockID. If the provided data availability header is
+// nil or has no row or column roots, then the minimum data availability header
+// is used
+func NewBlockID(hash []byte, psh PartSetHeader, dah *DataAvailabilityHeader) BlockID {
+	if dah.IsZero() {
+		dah = MinDataAvailabilityHeader()
+	}
+	return BlockID{
+		Hash:                   hash,
+		PartSetHeader:          psh,
+		DataAvailabilityHeader: dah,
+	}
+}
+
+// EmptyBlockID returns a blockID with only the minimum data availability header
+func EmptyBlockID() BlockID {
+	return BlockID{
+		DataAvailabilityHeader: MinDataAvailabilityHeader(),
+	}
 }
 
 // Equals returns true if the BlockID matches the given BlockID
@@ -1575,6 +1674,9 @@ func (blockID BlockID) ValidateBasic() error {
 	}
 	if err := blockID.PartSetHeader.ValidateBasic(); err != nil {
 		return fmt.Errorf("wrong PartSetHeader: %v", err)
+	}
+	if err := blockID.DataAvailabilityHeader.ValidateBasic(); err != nil {
+		return fmt.Errorf("wrong DataAvailabilityHeader: %w", err)
 	}
 	return nil
 }
@@ -1609,8 +1711,9 @@ func (blockID *BlockID) ToProto() tmproto.BlockID {
 	}
 
 	return tmproto.BlockID{
-		Hash:          blockID.Hash,
-		PartSetHeader: blockID.PartSetHeader.ToProto(),
+		Hash:                   blockID.Hash,
+		PartSetHeader:          blockID.PartSetHeader.ToProto(),
+		DataAvailabilityHeader: blockID.DataAvailabilityHeader.ToProto(),
 	}
 }
 
@@ -1618,7 +1721,7 @@ func (blockID *BlockID) ToProto() tmproto.BlockID {
 // It returns an error if the block id is invalid.
 func BlockIDFromProto(bID *tmproto.BlockID) (*BlockID, error) {
 	if bID == nil {
-		return nil, errors.New("nil BlockID")
+		return nil, errors.New("expected non nil proto BlockID")
 	}
 
 	blockID := new(BlockID)
@@ -1627,8 +1730,14 @@ func BlockIDFromProto(bID *tmproto.BlockID) (*BlockID, error) {
 		return nil, err
 	}
 
+	dah, err := DataAvailabilityHeaderFromProto(bID.DataAvailabilityHeader)
+	if err != nil {
+		return nil, err
+	}
+
 	blockID.PartSetHeader = *ph
 	blockID.Hash = bID.Hash
+	blockID.DataAvailabilityHeader = dah
 
 	return blockID, blockID.ValidateBasic()
 }

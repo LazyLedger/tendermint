@@ -180,7 +180,7 @@ func TestReactorsGossipNoCommittedEvidence(t *testing.T) {
 	// wait to see that only two evidence is sent
 	time.Sleep(1800 * time.Millisecond)
 
-	peerEv, _ = pools[1].PendingEvidence(2000)
+	peerEv, _ = pools[1].PendingEvidence(10000)
 	assert.EqualValues(t, []types.Evidence{evList[0], evList[1]}, peerEv)
 }
 
@@ -211,7 +211,7 @@ func makeAndConnectReactorsAndPools(config *cfg.Config, stateStores []sm.Store) 
 		evidenceDB := memdb.NewDB()
 		blockStore := &mocks.BlockStore{}
 		blockStore.On("LoadBlockMeta", mock.AnythingOfType("int64")).Return(
-			&types.BlockMeta{Header: types.Header{Time: evidenceTime}},
+			&types.BlockMeta{Header: types.Header{Time: evidenceTime}, BlockID: types.EmptyBlockID()},
 		)
 		pool, err := evidence.NewPool(evidenceDB, stateStores[i], blockStore)
 		if err != nil {
@@ -266,7 +266,7 @@ func _waitForEvidence(
 	var evList []types.Evidence
 	currentPoolSize := 0
 	for currentPoolSize != len(evs) {
-		evList, _ = evpool.PendingEvidence(int64(len(evs) * 500)) // each evidence should not be more than 500 bytes
+		evList, _ = evpool.PendingEvidence(int64(len(evs) * 1000)) // each evidence should not be more than 1000 bytes
 		currentPoolSize = len(evList)
 		time.Sleep(time.Millisecond * 100)
 	}
@@ -323,6 +323,7 @@ func exampleVote(t byte) *types.Vote {
 				Total: 1000000,
 				Hash:  tmhash.Sum([]byte("blockID_part_set_header_hash")),
 			},
+			DataAvailabilityHeader: types.MinDataAvailabilityHeader(),
 		},
 		ValidatorAddress: crypto.AddressHash([]byte("validator_address")),
 		ValidatorIndex:   56789,
@@ -351,7 +352,7 @@ func TestEvidenceVectors(t *testing.T) {
 		evidenceList []types.Evidence
 		expBytes     string
 	}{
-		{"DuplicateVoteEvidence", []types.Evidence{dupl}, "0a85020a82020a79080210031802224a0a208b01023386c371778ecb6368573e539afc3cc860ec3a2f614e54fe5652f4fc80122608c0843d122072db3d959635dff1bb567bedaa70573392c5159666a3f8caf11e413aac52207a2a0b08b1d381d20510809dca6f32146af1f4111082efb388211bc72c55bcd61e9ac3d538d5bb031279080110031802224a0a208b01023386c371778ecb6368573e539afc3cc860ec3a2f614e54fe5652f4fc80122608c0843d122072db3d959635dff1bb567bedaa70573392c5159666a3f8caf11e413aac52207a2a0b08b1d381d20510809dca6f32146af1f4111082efb388211bc72c55bcd61e9ac3d538d5bb03180a200a2a060880dbaae105"},
+		{"DuplicateVoteEvidence", []types.Evidence{dupl}, "0a9f050a9c050ac5020802100318022295020a208b01023386c371778ecb6368573e539afc3cc860ec3a2f614e54fe5652f4fc80122608c0843d122072db3d959635dff1bb567bedaa70573392c5159666a3f8caf11e413aac52207a1ac8010a30fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f0a30ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3951230fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f1230ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3952a0b08b1d381d20510809dca6f32146af1f4111082efb388211bc72c55bcd61e9ac3d538d5bb0312c5020801100318022295020a208b01023386c371778ecb6368573e539afc3cc860ec3a2f614e54fe5652f4fc80122608c0843d122072db3d959635dff1bb567bedaa70573392c5159666a3f8caf11e413aac52207a1ac8010a30fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f0a30ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3951230fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f1230ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3952a0b08b1d381d20510809dca6f32146af1f4111082efb388211bc72c55bcd61e9ac3d538d5bb03180a200a2a060880dbaae105"},
 	}
 
 	for _, tc := range testCases {

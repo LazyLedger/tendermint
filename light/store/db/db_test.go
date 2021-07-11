@@ -178,7 +178,7 @@ func randLightBlock(height int64) *types.LightBlock {
 				ChainID:            tmrand.Str(12),
 				Height:             height,
 				Time:               time.Now(),
-				LastBlockID:        types.BlockID{},
+				LastBlockID:        types.EmptyBlockID(),
 				LastCommitHash:     crypto.CRandBytes(tmhash.Size),
 				DataHash:           crypto.CRandBytes(tmhash.Size),
 				ValidatorsHash:     crypto.CRandBytes(tmhash.Size),
@@ -189,7 +189,7 @@ func randLightBlock(height int64) *types.LightBlock {
 				EvidenceHash:       crypto.CRandBytes(tmhash.Size),
 				ProposerAddress:    crypto.CRandBytes(crypto.AddressSize),
 			},
-			Commit: &types.Commit{},
+			Commit: &types.Commit{BlockID: types.EmptyBlockID()},
 		},
 		ValidatorSet: vals,
 	}

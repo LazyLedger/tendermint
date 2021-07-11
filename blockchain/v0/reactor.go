@@ -389,7 +389,11 @@ FOR_LOOP:
 			var (
 				firstParts         = first.MakePartSet(types.BlockPartSizeBytes)
 				firstPartSetHeader = firstParts.Header()
-				firstID            = types.BlockID{Hash: first.Hash(), PartSetHeader: firstPartSetHeader}
+				firstID            = types.BlockID{
+					Hash:                   first.Hash(),
+					PartSetHeader:          firstPartSetHeader,
+					DataAvailabilityHeader: &first.DataAvailabilityHeader,
+				}
 			)
 
 			// Finally, verify the first block using the second's commit

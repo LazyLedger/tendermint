@@ -1098,8 +1098,12 @@ func (cs *State) defaultDecideProposal(height int64, round int32) {
 	}
 
 	// Make proposal
-	propBlockID := types.BlockID{Hash: block.Hash(), PartSetHeader: blockParts.Header()}
-	proposal := types.NewProposal(height, round, cs.ValidRound, propBlockID, &block.DataAvailabilityHeader)
+	propBlockID := types.BlockID{
+		Hash:                   block.Hash(),
+		PartSetHeader:          blockParts.Header(),
+		DataAvailabilityHeader: &block.DataAvailabilityHeader,
+	}
+	proposal := types.NewProposal(height, round, cs.ValidRound, propBlockID)
 	p, err := proposal.ToProto()
 	if err != nil {
 		cs.Logger.Error(fmt.Sprintf("can't serialize proposal: %s", err.Error()))
@@ -1190,7 +1194,7 @@ func (cs *State) createProposalBlock() (block *types.Block, blockParts *types.Pa
 	case cs.Height == cs.state.InitialHeight:
 		// We're creating a proposal for the first block.
 		// The commit is empty, but not nil.
-		commit = types.NewCommit(0, 0, types.BlockID{}, nil)
+		commit = types.NewCommit(0, 0, types.EmptyBlockID(), nil)
 	case cs.LastCommit.HasTwoThirdsMajority():
 		// Make the commit from LastCommit
 		commit = cs.LastCommit.MakeCommit()
@@ -1247,14 +1251,18 @@ func (cs *State) defaultDoPrevote(height int64, round int32) {
 	// If a block is locked, prevote that.
 	if cs.LockedBlock != nil {
 		logger.Info("enterPrevote: Already locked on a block, prevoting locked block")
-		cs.signAddVote(tmproto.PrevoteType, cs.LockedBlock.Hash(), cs.LockedBlockParts.Header())
+		cs.signAddVote(tmproto.PrevoteType, types.BlockID{
+			Hash:                   cs.LockedBlock.Hash(),
+			PartSetHeader:          cs.LockedBlockParts.Header(),
+			DataAvailabilityHeader: &cs.LockedBlock.DataAvailabilityHeader},
+		)
 		return
 	}
 
 	// If ProposalBlock is nil, prevote nil.
 	if cs.ProposalBlock == nil {
 		logger.Info("enterPrevote: ProposalBlock is nil")
-		cs.signAddVote(tmproto.PrevoteType, nil, types.PartSetHeader{})
+		cs.signAddVote(tmproto.PrevoteType, types.EmptyBlockID())
 		return
 	}
 
@@ -1263,7 +1271,7 @@ func (cs *State) defaultDoPrevote(height int64, round int32) {
 	if err != nil {
 		// ProposalBlock is invalid, prevote nil.
 		logger.Error("enterPrevote: ProposalBlock is invalid", "err", err)
-		cs.signAddVote(tmproto.PrevoteType, nil, types.PartSetHeader{})
+		cs.signAddVote(tmproto.PrevoteType, types.EmptyBlockID())
 		return
 	}
 
@@ -1271,7 +1279,11 @@ func (cs *State) defaultDoPrevote(height int64, round int32) {
 	// NOTE: the proposal signature is validated when it is received,
 	// and the proposal block parts are validated as they are received (against the merkle hash in the proposal)
 	logger.Info("enterPrevote: ProposalBlock is valid")
-	cs.signAddVote(tmproto.PrevoteType, cs.ProposalBlock.Hash(), cs.ProposalBlockParts.Header())
+	cs.signAddVote(tmproto.PrevoteType, types.BlockID{
+		Hash:                   cs.ProposalBlock.Hash(),
+		PartSetHeader:          cs.ProposalBlockParts.Header(),
+		DataAvailabilityHeader: &cs.ProposalBlock.DataAvailabilityHeader},
+	)
 }
 
 // Enter: any +2/3 prevotes at next round.
@@ -1341,7 +1353,7 @@ func (cs *State) enterPrecommit(height int64, round int32) {
 		} else {
 			logger.Info("enterPrecommit: No +2/3 prevotes during enterPrecommit. Precommitting nil.")
 		}
-		cs.signAddVote(tmproto.PrecommitType, nil, types.PartSetHeader{})
+		cs.signAddVote(tmproto.PrecommitType, types.EmptyBlockID())
 		return
 	}
 
@@ -1369,7 +1381,7 @@ func (cs *State) enterPrecommit(height int64, round int32) {
 				cs.Logger.Error("Error publishing event unlock", "err", err)
 			}
 		}
-		cs.signAddVote(tmproto.PrecommitType, nil, types.PartSetHeader{})
+		cs.signAddVote(tmproto.PrecommitType, types.EmptyBlockID())
 		return
 	}
 
@@ -1382,7 +1394,7 @@ func (cs *State) enterPrecommit(height int64, round int32) {
 		if err := cs.eventBus.PublishEventRelock(cs.RoundStateEvent()); err != nil {
 			cs.Logger.Error("Error publishing event relock", "err", err)
 		}
-		cs.signAddVote(tmproto.PrecommitType, blockID.Hash, blockID.PartSetHeader)
+		cs.signAddVote(tmproto.PrecommitType, blockID)
 		return
 	}
 
@@ -1399,7 +1411,7 @@ func (cs *State) enterPrecommit(height int64, round int32) {
 		if err := cs.eventBus.PublishEventLock(cs.RoundStateEvent()); err != nil {
 			cs.Logger.Error("Error publishing event lock", "err", err)
 		}
-		cs.signAddVote(tmproto.PrecommitType, blockID.Hash, blockID.PartSetHeader)
+		cs.signAddVote(tmproto.PrecommitType, blockID)
 		return
 	}
 
@@ -1417,7 +1429,7 @@ func (cs *State) enterPrecommit(height int64, round int32) {
 	if err := cs.eventBus.PublishEventUnlock(cs.RoundStateEvent()); err != nil {
 		cs.Logger.Error("Error publishing event unlock", "err", err)
 	}
-	cs.signAddVote(tmproto.PrecommitType, nil, types.PartSetHeader{})
+	cs.signAddVote(tmproto.PrecommitType, types.EmptyBlockID())
 }
 
 // Enter: any +2/3 precommits for next round.
@@ -1626,7 +1638,11 @@ func (cs *State) finalizeCommit(height int64) {
 	var retainHeight int64
 	stateCopy, retainHeight, err = cs.blockExec.ApplyBlock(
 		stateCopy,
-		types.BlockID{Hash: block.Hash(), PartSetHeader: blockParts.Header()},
+		types.BlockID{
+			Hash:                   block.Hash(),
+			PartSetHeader:          blockParts.Header(),
+			DataAvailabilityHeader: &block.DataAvailabilityHeader,
+		},
 		block)
 	if err != nil {
 		cs.Logger.Error("Error on ApplyBlock", "err", err)
@@ -2129,8 +2145,7 @@ func (cs *State) addVote(
 // CONTRACT: cs.privValidator is not nil.
 func (cs *State) signVote(
 	msgType tmproto.SignedMsgType,
-	hash []byte,
-	header types.PartSetHeader,
+	blockID types.BlockID,
 ) (*types.Vote, error) {
 	// Flush the WAL. Otherwise, we may not recompute the same vote to sign,
 	// and the privValidator will refuse to sign anything.
@@ -2151,7 +2166,7 @@ func (cs *State) signVote(
 		Round:            cs.Round,
 		Timestamp:        cs.voteTime(),
 		Type:             msgType,
-		BlockID:          types.BlockID{Hash: hash, PartSetHeader: header},
+		BlockID:          blockID,
 	}
 	v := vote.ToProto()
 	err := cs.privValidator.SignVote(cs.state.ChainID, v)
@@ -2180,7 +2195,7 @@ func (cs *State) voteTime() time.Time {
 }
 
 // sign the vote and publish on internalMsgQueue
-func (cs *State) signAddVote(msgType tmproto.SignedMsgType, hash []byte, header types.PartSetHeader) *types.Vote {
+func (cs *State) signAddVote(msgType tmproto.SignedMsgType, blockID types.BlockID) *types.Vote {
 	if cs.privValidator == nil { // the node does not have a key
 		return nil
 	}
@@ -2197,7 +2212,7 @@ func (cs *State) signAddVote(msgType tmproto.SignedMsgType, hash []byte, header 
 	}
 
 	// TODO: pass pubKey to signVote
-	vote, err := cs.signVote(msgType, hash, header)
+	vote, err := cs.signVote(msgType, blockID)
 	if err == nil {
 		cs.sendInternalMessage(msgInfo{&VoteMessage{vote}, ""})
 		cs.Logger.Info("Signed and pushed vote", "height", cs.Height, "round", cs.Round, "vote", vote)

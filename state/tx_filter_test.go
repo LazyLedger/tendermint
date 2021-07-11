@@ -3,19 +3,18 @@ package state_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/lazyledger/lazyledger-core/libs/db/memdb"
 	tmrand "github.com/lazyledger/lazyledger-core/libs/rand"
 	sm "github.com/lazyledger/lazyledger-core/state"
 	"github.com/lazyledger/lazyledger-core/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTxFilter(t *testing.T) {
 	genDoc := randomGenesisDoc()
-	genDoc.ConsensusParams.Block.MaxBytes = 3000
-	genDoc.ConsensusParams.Evidence.MaxBytes = 1500
+	genDoc.ConsensusParams.Block.MaxBytes = 30000
+	genDoc.ConsensusParams.Evidence.MaxBytes = 15000
 
 	// Max size of Txs is much smaller than size of block,
 	// since we need to account for commits and evidence.
@@ -24,8 +23,8 @@ func TestTxFilter(t *testing.T) {
 		isErr bool
 	}{
 		{types.Tx(tmrand.Bytes(2139)), false},
-		{types.Tx(tmrand.Bytes(2150)), true},
-		{types.Tx(tmrand.Bytes(3000)), true},
+		{types.Tx(tmrand.Bytes(21500)), false},
+		{types.Tx(tmrand.Bytes(30000)), true},
 	}
 
 	for i, tc := range testCases {

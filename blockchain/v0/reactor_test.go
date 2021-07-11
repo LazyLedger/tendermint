@@ -96,7 +96,12 @@ func newBlockchainReactor(
 
 	// let's add some blocks in
 	for blockHeight := int64(1); blockHeight <= maxBlockHeight; blockHeight++ {
-		lastCommit := types.NewCommit(blockHeight-1, 0, types.BlockID{}, nil)
+		lastCommit := types.NewCommit(
+			blockHeight-1,
+			0,
+			types.EmptyBlockID(),
+			nil,
+		)
 		if blockHeight > 1 {
 			lastBlockMeta := blockStore.LoadBlockMeta(blockHeight - 1)
 			lastBlock, err := blockStore.LoadBlock(context.TODO(), blockHeight-1)
@@ -122,8 +127,11 @@ func newBlockchainReactor(
 		thisBlock := makeBlock(blockHeight, state, lastCommit)
 
 		thisParts := thisBlock.MakePartSet(types.BlockPartSizeBytes)
-		blockID := types.BlockID{Hash: thisBlock.Hash(), PartSetHeader: thisParts.Header()}
-
+		blockID := types.BlockID{
+			Hash:                   thisBlock.Hash(),
+			PartSetHeader:          thisParts.Header(),
+			DataAvailabilityHeader: &thisBlock.DataAvailabilityHeader,
+		}
 		state, _, err = blockExec.ApplyBlock(state, blockID, thisBlock)
 		if err != nil {
 			panic(fmt.Errorf("error apply block: %w", err))
@@ -304,6 +312,8 @@ func makeTxs(height int64) (txs []types.Tx) {
 func makeBlock(height int64, state sm.State, lastCommit *types.Commit) *types.Block {
 	block, _ := state.MakeBlock(height, makeTxs(height), nil,
 		nil, types.Messages{}, lastCommit, state.Validators.GetProposer().Address)
+
+	block.LastBlockID = lastCommit.BlockID
 	return block
 }
 

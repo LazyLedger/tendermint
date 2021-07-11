@@ -48,7 +48,10 @@ func TestEvidencePoolBasic(t *testing.T) {
 	valSet, privVals := types.RandValidatorSet(1, 10)
 
 	blockStore.On("LoadBlockMeta", mock.AnythingOfType("int64")).Return(
-		&types.BlockMeta{Header: types.Header{Time: defaultEvidenceTime}},
+		&types.BlockMeta{
+			Header:  types.Header{Time: defaultEvidenceTime},
+			BlockID: types.EmptyBlockID(),
+		},
 	)
 	stateStore.On("LoadValidators", mock.AnythingOfType("int64")).Return(valSet, nil)
 	stateStore.On("Load").Return(createState(height+1, valSet), nil)
@@ -83,7 +86,7 @@ func TestEvidencePoolBasic(t *testing.T) {
 	next := pool.EvidenceFront()
 	assert.Equal(t, ev, next.Value.(types.Evidence))
 
-	const evidenceBytes int64 = 372
+	const evidenceBytes int64 = 780
 	evs, size = pool.PendingEvidence(evidenceBytes)
 	assert.Equal(t, 1, len(evs))
 	assert.Equal(t, evidenceBytes, size) // check that the size of the single evidence in bytes is correct
@@ -109,9 +112,15 @@ func TestAddExpiredEvidence(t *testing.T) {
 
 	blockStore.On("LoadBlockMeta", mock.AnythingOfType("int64")).Return(func(h int64) *types.BlockMeta {
 		if h == height || h == expiredHeight {
-			return &types.BlockMeta{Header: types.Header{Time: defaultEvidenceTime}}
+			return &types.BlockMeta{
+				Header:  types.Header{Time: defaultEvidenceTime},
+				BlockID: types.EmptyBlockID(),
+			}
 		}
-		return &types.BlockMeta{Header: types.Header{Time: expiredEvidenceTime}}
+		return &types.BlockMeta{
+			Header:  types.Header{Time: expiredEvidenceTime},
+			BlockID: types.EmptyBlockID(),
+		}
 	})
 
 	pool, err := evidence.NewPool(evidenceDB, stateStore, blockStore)
@@ -240,7 +249,7 @@ func TestCheckEvidenceWithLightClientAttack(t *testing.T) {
 
 	// for simplicity we are simulating a duplicate vote attack where all the validators in the
 	// conflictingVals set voted twice
-	blockID := makeBlockID(conflictingHeader.Hash(), 1000, []byte("partshash"))
+	blockID := makeBlockID(conflictingHeader.Hash(), 1000, []byte("partshash"), types.MinDataAvailabilityHeader())
 	voteSet := types.NewVoteSet(evidenceChainID, height, 1, tmproto.SignedMsgType(2), conflictingVals)
 	commit, err := types.MakeCommit(blockID, height, 1, voteSet, conflictingPrivVals, defaultEvidenceTime)
 	require.NoError(t, err)
@@ -258,7 +267,7 @@ func TestCheckEvidenceWithLightClientAttack(t *testing.T) {
 		Timestamp:           defaultEvidenceTime,
 	}
 
-	trustedBlockID := makeBlockID(trustedHeader.Hash(), 1000, []byte("partshash"))
+	trustedBlockID := makeBlockID(trustedHeader.Hash(), 1000, []byte("partshash"), types.MinDataAvailabilityHeader())
 	trustedVoteSet := types.NewVoteSet(evidenceChainID, height, 1, tmproto.SignedMsgType(2), conflictingVals)
 	trustedCommit, err := types.MakeCommit(trustedBlockID, height, 1, trustedVoteSet, conflictingPrivVals,
 		defaultEvidenceTime)
@@ -273,7 +282,7 @@ func TestCheckEvidenceWithLightClientAttack(t *testing.T) {
 	stateStore.On("LoadValidators", height).Return(conflictingVals, nil)
 	stateStore.On("Load").Return(state, nil)
 	blockStore := &mocks.BlockStore{}
-	blockStore.On("LoadBlockMeta", height).Return(&types.BlockMeta{Header: *trustedHeader})
+	blockStore.On("LoadBlockMeta", height).Return(&types.BlockMeta{Header: *trustedHeader, BlockID: types.EmptyBlockID()})
 	blockStore.On("LoadBlockCommit", height).Return(trustedCommit)
 
 	pool, err := evidence.NewPool(memdb.NewDB(), stateStore, blockStore)
@@ -403,6 +412,7 @@ func initializeBlockStore(db dbm.DB, state sm.State, valAddr []byte) *store.Bloc
 		block, _ := state.MakeBlock(i, []types.Tx{}, nil, nil,
 			types.Messages{}, lastCommit, state.Validators.GetProposer().Address)
 		block.Header.Time = defaultEvidenceTime.Add(time.Duration(i) * time.Minute)
+		block.LastBlockID = types.EmptyBlockID()
 		block.Header.Version = tmversion.Consensus{Block: version.BlockProtocol, App: 1}
 		const parts = 1
 		partSet := block.MakePartSet(parts)
@@ -424,7 +434,12 @@ func makeCommit(height int64, valAddr []byte) *types.Commit {
 		Timestamp:        defaultEvidenceTime,
 		Signature:        []byte("Signature"),
 	}}
-	return types.NewCommit(height, 0, types.BlockID{}, commitSigs)
+	return types.NewCommit(
+		height,
+		0,
+		types.EmptyBlockID(),
+		commitSigs,
+	)
 }
 
 func defaultTestPool(height int64) (*evidence.Pool, types.MockPV) {

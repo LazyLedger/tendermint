@@ -184,7 +184,7 @@ func (store dbStore) save(state State, key []byte) error {
 	return nil
 }
 
-// BootstrapState saves a new state, used e.g. by state sync when starting from non-zero height.
+// Bootstrap saves a new state, used e.g. by state sync when starting from non-zero height.
 func (store dbStore) Bootstrap(state State) error {
 	height := state.LastBlockHeight + 1
 	if height == 1 {

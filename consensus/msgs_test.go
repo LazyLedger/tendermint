@@ -27,9 +27,17 @@ func TestMsgToProto(t *testing.T) {
 		Hash:  tmrand.Bytes(32),
 	}
 	pbPsh := psh.ToProto()
+	roots, err := types.NmtRootsFromBytes([][]byte{tmrand.Bytes(2*consts.NamespaceSize + tmhash.Size)})
+	require.NoError(t, err)
+	dah := &types.DataAvailabilityHeader{
+		RowsRoots:   roots,
+		ColumnRoots: roots,
+	}
+	dah.Hash()
 	bi := types.BlockID{
-		Hash:          tmrand.Bytes(32),
-		PartSetHeader: psh,
+		Hash:                   tmrand.Bytes(32),
+		PartSetHeader:          psh,
+		DataAvailabilityHeader: dah,
 	}
 	pbBi := bi.ToProto()
 	bits := bits.NewBitArray(1)
@@ -48,8 +56,6 @@ func TestMsgToProto(t *testing.T) {
 	pbParts, err := parts.ToProto()
 	require.NoError(t, err)
 
-	roots, err := types.NmtRootsFromBytes([][]byte{tmrand.Bytes(2*consts.NamespaceSize + tmhash.Size)})
-	require.NoError(t, err)
 	proposal := types.Proposal{
 		Type:      tmproto.ProposalType,
 		Height:    1,
@@ -58,10 +64,7 @@ func TestMsgToProto(t *testing.T) {
 		BlockID:   bi,
 		Timestamp: time.Now(),
 		Signature: tmrand.Bytes(20),
-		DAHeader: &types.DataAvailabilityHeader{
-			RowsRoots:   roots,
-			ColumnRoots: roots,
-		},
+		DAHeader:  bi.DataAvailabilityHeader,
 	}
 	pbProposal, err := proposal.ToProto()
 	require.NoError(t, err)
@@ -72,7 +75,7 @@ func TestMsgToProto(t *testing.T) {
 	val := types.NewValidator(pk, 100)
 
 	vote, err := types.MakeVote(
-		1, types.BlockID{}, &types.ValidatorSet{Proposer: val, Validators: []*types.Validator{val}},
+		1, types.EmptyBlockID(), &types.ValidatorSet{Proposer: val, Validators: []*types.Validator{val}},
 		pv, "chainID", time.Now())
 	require.NoError(t, err)
 	pbVote := vote.ToProto()
@@ -333,8 +336,9 @@ func TestConsMsgsVectors(t *testing.T) {
 	pbPsh := psh.ToProto()
 
 	bi := types.BlockID{
-		Hash:          []byte("add_more_exclamation_marks_code-"),
-		PartSetHeader: psh,
+		Hash:                   []byte("add_more_exclamation_marks_code-"),
+		PartSetHeader:          psh,
+		DataAvailabilityHeader: types.MinDataAvailabilityHeader(),
 	}
 	pbBi := bi.ToProto()
 	bits := bits.NewBitArray(1)
@@ -361,7 +365,7 @@ func TestConsMsgsVectors(t *testing.T) {
 		BlockID:   bi,
 		Timestamp: date,
 		Signature: []byte("add_more_exclamation"),
-		DAHeader:  &types.DataAvailabilityHeader{},
+		DAHeader:  bi.DataAvailabilityHeader,
 	}
 	pbProposal, err := proposal.ToProto()
 	require.NoError(t, err)
@@ -401,7 +405,7 @@ func TestConsMsgsVectors(t *testing.T) {
 				Height: 1, Round: 1, BlockPartSetHeader: pbPsh, BlockParts: pbBits, IsCommit: false}}},
 			"1231080110011a24080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d22050801120100"},
 		{"Proposal", &tmcons.Message{Sum: &tmcons.Message_Proposal{Proposal: &tmcons.Proposal{Proposal: *pbProposal}}},
-			"1a740a7208201001180120012a480a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d320608c0b89fdc053a146164645f6d6f72655f6578636c616d6174696f6e4200"},
+			"1a8a040a870408201001180120012a93020a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1ac8010a30fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f0a30ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3951230fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f1230ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c395320608c0b89fdc053a146164645f6d6f72655f6578636c616d6174696f6e42c8010a30fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f0a30ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3951230fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f1230ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c395"},
 		{"ProposalPol", &tmcons.Message{Sum: &tmcons.Message_ProposalPol{
 			ProposalPol: &tmcons.ProposalPOL{Height: 1, ProposalPolRound: 1}}},
 			"2206080110011a00"},
@@ -410,7 +414,7 @@ func TestConsMsgsVectors(t *testing.T) {
 			"2a36080110011a3008011204746573741a26080110011a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d"},
 		{"Vote", &tmcons.Message{Sum: &tmcons.Message_Vote{
 			Vote: &tmcons.Vote{Vote: vpb}}},
-			"32700a6e0802100122480a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d2a0608c0b89fdc0532146164645f6d6f72655f6578636c616d6174696f6e3801"},
+			"32bd020aba02080210012293020a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1ac8010a30fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f0a30ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3951230fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f1230ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3952a0608c0b89fdc0532146164645f6d6f72655f6578636c616d6174696f6e3801"},
 		{"HasVote", &tmcons.Message{Sum: &tmcons.Message_HasVote{
 			HasVote: &tmcons.HasVote{Height: 1, Round: 1, Type: tmproto.PrevoteType, Index: 1}}},
 			"3a080801100118012001"},
@@ -420,10 +424,10 @@ func TestConsMsgsVectors(t *testing.T) {
 			"3a1808ffffffffffffffff7f10ffffffff07180120ffffffff07"},
 		{"VoteSetMaj23", &tmcons.Message{Sum: &tmcons.Message_VoteSetMaj23{
 			VoteSetMaj23: &tmcons.VoteSetMaj23{Height: 1, Round: 1, Type: tmproto.PrevoteType, BlockID: pbBi}}},
-			"425008011001180122480a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d"},
+			"429c020801100118012293020a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1ac8010a30fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f0a30ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3951230fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f1230ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c395"},
 		{"VoteSetBits", &tmcons.Message{Sum: &tmcons.Message_VoteSetBits{
 			VoteSetBits: &tmcons.VoteSetBits{Height: 1, Round: 1, Type: tmproto.PrevoteType, BlockID: pbBi, Votes: *pbBits}}},
-			"4a5708011001180122480a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d2a050801120100"},
+			"4aa3020801100118012293020a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1ac8010a30fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f0a30ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3951230fffffffffffffffefffffffffffffffe669aa8f0d85221a05b6f0917884d30616a6c7d5330a5640a08a04dcc5b092f4f1230ffffffffffffffffffffffffffffffff293437f3b6a5611e25c90d5a44b84cc4b3720cdba68553defe8b719af1f5c3952a050801120100"},
 	}
 
 	for _, tc := range testCases {

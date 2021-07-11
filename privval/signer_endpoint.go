@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultTimeoutReadWriteSeconds = 5
+	defaultTimeoutReadWriteSeconds = 20
 )
 
 type signerEndpoint struct {

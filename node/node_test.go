@@ -320,7 +320,12 @@ func TestCreateProposalBlock(t *testing.T) {
 		evidencePool,
 	)
 
-	commit := types.NewCommit(height-1, 0, types.BlockID{}, nil)
+	commit := types.NewCommit(
+		height-1,
+		0,
+		types.EmptyBlockID(),
+		nil,
+	)
 	block, _ := blockExec.CreateProposalBlock(
 		height,
 		state, commit,
@@ -389,7 +394,7 @@ func TestMaxTxsProposalBlockSize(t *testing.T) {
 		sm.EmptyEvidencePool{},
 	)
 
-	commit := types.NewCommit(height-1, 0, types.BlockID{}, nil)
+	commit := types.NewCommit(height-1, 0, types.EmptyBlockID(), nil)
 	block, _ := blockExec.CreateProposalBlock(
 		height,
 		state, commit,
@@ -420,7 +425,7 @@ func TestMaxProposalBlockSize(t *testing.T) {
 
 	state, stateDB, _ := state(types.MaxVotesCount, int64(1))
 	stateStore := sm.NewStore(stateDB)
-	const maxBytes int64 = 1024 * 1024 * 2
+	const maxBytes int64 = 3151945
 	state.ConsensusParams.Block.MaxBytes = maxBytes
 	proposerAddr, _ := state.Validators.GetByIndex(0)
 
@@ -462,6 +467,7 @@ func TestMaxProposalBlockSize(t *testing.T) {
 			Total: math.MaxInt32,
 			Hash:  tmhash.Sum([]byte("blockID_part_set_header_hash")),
 		},
+		DataAvailabilityHeader: types.MinDataAvailabilityHeader(),
 	}
 
 	timestamp := time.Date(math.MaxInt64, 0, 0, 0, 0, 0, math.MaxInt64, time.UTC)
@@ -506,15 +512,17 @@ func TestMaxProposalBlockSize(t *testing.T) {
 	// this ensures that the header is at max size
 	block.Header.Time = timestamp
 	block.Header.NumOriginalDataShares = math.MaxInt64
+	block.Header.LastBlockID = blockID
+	block.LastCommit.BlockID = blockID
 
 	pb, err := block.ToProto()
 	require.NoError(t, err)
 
 	// require that the header and commit be the max possible size
-	require.Equal(t, int64(pb.Header.Size()), types.MaxHeaderBytes)
-	require.Equal(t, int64(pb.LastCommit.Size()), types.MaxCommitBytes(types.MaxVotesCount))
+	require.Equal(t, types.MaxHeaderBytes, int64(pb.Header.Size()))
+	assert.LessOrEqual(t, int64(pb.LastCommit.Size()), types.MaxCommitBytes(types.MaxVotesCount))
 	// make sure that the block is less than the max possible size
-	assert.LessOrEqual(t, maxBytes, int64(pb.Size()))
+	assert.LessOrEqual(t, int64(pb.Size()), maxBytes)
 	// because of the proto overhead we expect the part set bytes to be equal or
 	// less than the pb block size
 	assert.LessOrEqual(t, partSet.ByteSize(), int64(pb.Size()))

@@ -47,7 +47,11 @@ func makeTestCommit(height int64, timestamp time.Time) *types.Commit {
 	copy(hash, hh[:])
 
 	return types.NewCommit(height, 0,
-		types.BlockID{Hash: hash, PartSetHeader: types.PartSetHeader{Hash: []byte(""), Total: 2}}, commitSigs)
+		types.BlockID{
+			Hash:                   hash,
+			PartSetHeader:          types.PartSetHeader{Hash: []byte(""), Total: 2},
+			DataAvailabilityHeader: types.MinDataAvailabilityHeader(),
+		}, commitSigs)
 }
 
 func makeTxs(height int64) (txs []types.Tx) {
@@ -60,6 +64,7 @@ func makeTxs(height int64) (txs []types.Tx) {
 func makeBlock(height int64, state sm.State, lastCommit *types.Commit) *types.Block {
 	block, _ := state.MakeBlock(height, makeTxs(height), nil,
 		nil, types.Messages{}, lastCommit, state.Validators.GetProposer().Address)
+	block.Hash()
 	return block
 }
 
@@ -183,7 +188,7 @@ func TestBlockStoreSaveLoadBlock(t *testing.T) {
 	}
 
 	// save a block
-	block := makeBlock(bs.Height()+1, state, new(types.Commit))
+	block := makeBlock(bs.Height()+1, state, &types.Commit{BlockID: types.EmptyBlockID()})
 	validPartSet := block.MakePartSet(2)
 	seenCommit := makeTestCommit(10, tmtime.Now())
 	err := bs.SaveBlock(ctx, block, partSet, seenCommit)
@@ -202,6 +207,7 @@ func TestBlockStoreSaveLoadBlock(t *testing.T) {
 		ChainID:         "block_test",
 		Time:            tmtime.Now(),
 		ProposerAddress: tmrand.Bytes(crypto.AddressSize),
+		LastBlockID:     types.EmptyBlockID(),
 	}
 
 	// End of setup, test data
@@ -238,7 +244,9 @@ func TestBlockStoreSaveLoadBlock(t *testing.T) {
 					Height:          5,
 					ChainID:         "block_test",
 					Time:            tmtime.Now(),
-					ProposerAddress: tmrand.Bytes(crypto.AddressSize)},
+					ProposerAddress: tmrand.Bytes(crypto.AddressSize),
+					LastBlockID:     types.EmptyBlockID(),
+				},
 				makeTestCommit(5, tmtime.Now()),
 			),
 			parts:      validPartSet,
@@ -390,8 +398,10 @@ func TestLoadBaseMeta(t *testing.T) {
 	require.NoError(t, err)
 	bs := MockBlockStore(nil)
 
+	lastCommit := &types.Commit{BlockID: types.EmptyBlockID()}
+
 	for h := int64(1); h <= 10; h++ {
-		block := makeBlock(h, state, new(types.Commit))
+		block := makeBlock(h, state, lastCommit)
 		partSet := block.MakePartSet(2)
 		seenCommit := makeTestCommit(h, tmtime.Now())
 		err := bs.SaveBlock(context.TODO(), block, partSet, seenCommit)
@@ -460,9 +470,11 @@ func TestPruneBlocks(t *testing.T) {
 	_, err = bs.PruneBlocks(0)
 	require.Error(t, err)
 
+	lastCommit := &types.Commit{BlockID: types.EmptyBlockID()}
+
 	// make more than 1000 blocks, to test batch deletions
 	for h := int64(1); h <= 1500; h++ {
-		block := makeBlock(h, state, new(types.Commit))
+		block := makeBlock(h, state, lastCommit)
 		partSet := block.MakePartSet(2)
 		seenCommit := makeTestCommit(h, tmtime.Now())
 		err := bs.SaveBlock(ctx, block, partSet, seenCommit)
@@ -569,9 +581,19 @@ func TestLoadBlockMeta(t *testing.T) {
 	require.Contains(t, panicErr.Error(), "unmarshal to tmproto.BlockMeta")
 
 	// 3. A good blockMeta serialized and saved to the DB should be retrievable
-	meta := &types.BlockMeta{Header: types.Header{
-		Version: tmversion.Consensus{
-			Block: version.BlockProtocol, App: 0}, Height: 1, ProposerAddress: tmrand.Bytes(crypto.AddressSize)}}
+	bID := types.EmptyBlockID()
+	meta := &types.BlockMeta{
+		Header: types.Header{
+			Version: tmversion.Consensus{
+				Block: version.BlockProtocol,
+				App:   0,
+			},
+			Height:          1,
+			ProposerAddress: tmrand.Bytes(crypto.AddressSize),
+			LastBlockID:     bID,
+		},
+		BlockID: bID,
+	}
 	pbm, err := meta.ToProto()
 	require.NoError(t, err)
 	err = db.Set(calcBlockMetaKey(height), mustEncode(pbm))
@@ -594,7 +616,10 @@ func TestBlockFetchAtHeight(t *testing.T) {
 	state, bs, cleanup := makeStateAndBlockStore(log.NewTMLogger(new(bytes.Buffer)))
 	defer cleanup()
 	require.Equal(t, bs.Height(), int64(0), "initially the height should be zero")
-	block := makeBlock(bs.Height()+1, state, new(types.Commit))
+	emptyBID := types.EmptyBlockID()
+	emptyCommit := &types.Commit{BlockID: emptyBID}
+	block := makeBlock(bs.Height()+1, state, emptyCommit)
+	block.LastBlockID = emptyBID
 
 	partSet := block.MakePartSet(2)
 	seenCommit := makeTestCommit(10, tmtime.Now())
@@ -646,7 +671,8 @@ func doFn(fn func() (interface{}, error)) (res interface{}, err error, panicErr 
 
 func newBlock(hdr types.Header, lastCommit *types.Commit) *types.Block {
 	return &types.Block{
-		Header:     hdr,
-		LastCommit: lastCommit,
+		Header:                 hdr,
+		LastCommit:             lastCommit,
+		DataAvailabilityHeader: *types.MinDataAvailabilityHeader(),
 	}
 }

@@ -91,10 +91,7 @@ func newValidatorStub(privValidator types.PrivValidator, valIndex int32) *valida
 	}
 }
 
-func (vs *validatorStub) signVote(
-	voteType tmproto.SignedMsgType,
-	hash []byte,
-	header types.PartSetHeader) (*types.Vote, error) {
+func (vs *validatorStub) signVote(voteType tmproto.SignedMsgType, blockID types.BlockID) (*types.Vote, error) {
 
 	pubKey, err := vs.PrivValidator.GetPubKey()
 	if err != nil {
@@ -108,7 +105,7 @@ func (vs *validatorStub) signVote(
 		Round:            vs.Round,
 		Timestamp:        tmtime.Now(),
 		Type:             voteType,
-		BlockID:          types.BlockID{Hash: hash, PartSetHeader: header},
+		BlockID:          blockID,
 	}
 	v := vote.ToProto()
 	err = vs.PrivValidator.SignVote(config.ChainID(), v)
@@ -118,8 +115,8 @@ func (vs *validatorStub) signVote(
 }
 
 // Sign vote for type/hash/header
-func signVote(vs *validatorStub, voteType tmproto.SignedMsgType, hash []byte, header types.PartSetHeader) *types.Vote {
-	v, err := vs.signVote(voteType, hash, header)
+func signVote(vs *validatorStub, voteType tmproto.SignedMsgType, blockID types.BlockID) *types.Vote {
+	v, err := vs.signVote(voteType, blockID)
 	if err != nil {
 		panic(fmt.Errorf("failed to sign vote: %v", err))
 	}
@@ -128,12 +125,11 @@ func signVote(vs *validatorStub, voteType tmproto.SignedMsgType, hash []byte, he
 
 func signVotes(
 	voteType tmproto.SignedMsgType,
-	hash []byte,
-	header types.PartSetHeader,
+	blockID types.BlockID,
 	vss ...*validatorStub) []*types.Vote {
 	votes := make([]*types.Vote, len(vss))
 	for i, vs := range vss {
-		votes[i] = signVote(vs, voteType, hash, header)
+		votes[i] = signVote(vs, voteType, blockID)
 	}
 	return votes
 }
@@ -205,8 +201,12 @@ func decideProposal(
 	}
 
 	// Make proposal
-	polRound, propBlockID := validRound, types.BlockID{Hash: block.Hash(), PartSetHeader: blockParts.Header()}
-	proposal = types.NewProposal(height, round, polRound, propBlockID, &block.DataAvailabilityHeader)
+	polRound, propBlockID := validRound, types.BlockID{
+		Hash:                   block.Hash(),
+		PartSetHeader:          blockParts.Header(),
+		DataAvailabilityHeader: &block.DataAvailabilityHeader,
+	}
+	proposal = types.NewProposal(height, round, polRound, propBlockID)
 	p, err := proposal.ToProto()
 	if err != nil {
 		panic(err)
@@ -217,7 +217,7 @@ func decideProposal(
 
 	proposal.Signature = p.Signature
 
-	return
+	return proposal, block
 }
 
 func addVotes(to *State, votes ...*types.Vote) {
@@ -229,11 +229,10 @@ func addVotes(to *State, votes ...*types.Vote) {
 func signAddVotes(
 	to *State,
 	voteType tmproto.SignedMsgType,
-	hash []byte,
-	header types.PartSetHeader,
+	blockID types.BlockID,
 	vss ...*validatorStub,
 ) {
-	votes := signVotes(voteType, hash, header, vss...)
+	votes := signVotes(voteType, blockID, vss...)
 	addVotes(to, votes...)
 }
 
@@ -295,7 +294,13 @@ func validatePrecommit(
 		}
 	} else {
 		if !bytes.Equal(vote.BlockID.Hash, votedBlockHash) {
-			panic("Expected precommit to be for proposal block")
+			panic(
+				fmt.Sprintf(
+					"Expected precommit to be for proposal block: expected %s got %s",
+					votedBlockHash,
+					vote.BlockID.Hash,
+				),
+			)
 		}
 	}
 

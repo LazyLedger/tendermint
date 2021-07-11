@@ -188,10 +188,17 @@ func StateFromProto(pb *tmstate.State) (*State, error) { //nolint:golint
 	state.ChainID = pb.ChainID
 	state.InitialHeight = pb.InitialHeight
 
-	bi, err := types.BlockIDFromProto(&pb.LastBlockID)
-	if err != nil {
-		return nil, err
+	var bi *types.BlockID
+	if pb.LastBlockID.DataAvailabilityHeader != nil {
+		var err error
+		bi, err = types.BlockIDFromProto(&pb.LastBlockID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		bi = &types.BlockID{}
 	}
+
 	state.LastBlockID = *bi
 	state.LastBlockHeight = pb.LastBlockHeight
 	state.LastBlockTime = pb.LastBlockTime
@@ -343,7 +350,7 @@ func MakeGenesisState(genDoc *types.GenesisDoc) (State, error) {
 		InitialHeight: genDoc.InitialHeight,
 
 		LastBlockHeight: 0,
-		LastBlockID:     types.BlockID{},
+		LastBlockID:     types.EmptyBlockID(),
 		LastBlockTime:   genDoc.GenesisTime,
 
 		NextValidators:              nextValidatorSet,

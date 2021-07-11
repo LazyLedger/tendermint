@@ -80,8 +80,9 @@ func (pkz privKeys) signHeader(header *types.Header, valSet *types.ValidatorSet,
 	}
 
 	blockID := types.BlockID{
-		Hash:          header.Hash(),
-		PartSetHeader: types.PartSetHeader{Total: 1, Hash: crypto.CRandBytes(32)},
+		Hash:                   header.Hash(),
+		PartSetHeader:          types.PartSetHeader{Total: 1, Hash: crypto.CRandBytes(32)},
+		DataAvailabilityHeader: types.MinDataAvailabilityHeader(),
 	}
 
 	// Fill in the votes we want.
@@ -125,11 +126,11 @@ func genHeader(chainID string, height int64, bTime time.Time, txs types.Txs,
 	valset, nextValset *types.ValidatorSet, appHash, consHash, resHash []byte) *types.Header {
 
 	return &types.Header{
-		Version: tmversion.Consensus{Block: version.BlockProtocol, App: 0},
-		ChainID: chainID,
-		Height:  height,
-		Time:    bTime,
-		// LastBlockID
+		Version:     tmversion.Consensus{Block: version.BlockProtocol, App: 0},
+		ChainID:     chainID,
+		Height:      height,
+		Time:        bTime,
+		LastBlockID: types.EmptyBlockID(),
 		// LastCommitHash
 		ValidatorsHash:     valset.Hash(),
 		NextValidatorsHash: nextValset.Hash(),
@@ -216,7 +217,7 @@ func genMockNodeWithKeys(
 		currentHeader = keys.GenSignedHeaderLastBlockID(chainID, height, bTime.Add(time.Duration(height)*time.Minute),
 			nil,
 			keys.ToValidators(2, 0), newKeys.ToValidators(2, 0), hash("app_hash"), hash("cons_hash"),
-			hash("results_hash"), 0, len(keys), types.BlockID{Hash: lastHeader.Hash()})
+			hash("results_hash"), 0, len(keys), lastHeader.Commit.BlockID)
 		headers[height] = currentHeader
 		valset[height] = keys.ToValidators(2, 0)
 		lastHeader = currentHeader

@@ -18,9 +18,13 @@ type BlockMeta struct {
 }
 
 // NewBlockMeta returns a new BlockMeta.
-func NewBlockMeta(block *Block, blockParts *PartSet) *BlockMeta {
+func NewBlockMeta(block *Block, parts *PartSet) *BlockMeta {
 	return &BlockMeta{
-		BlockID:   BlockID{block.Hash(), blockParts.Header()},
+		BlockID: BlockID{
+			Hash:                   block.Hash(),
+			DataAvailabilityHeader: &block.DataAvailabilityHeader,
+			PartSetHeader:          parts.Header(),
+		},
 		BlockSize: block.Size(),
 		Header:    block.Header,
 		NumTxs:    len(block.Data.Txs),
@@ -33,10 +37,7 @@ func (bm *BlockMeta) ToProto() (*tmproto.BlockMeta, error) {
 		return nil, nil
 	}
 
-	protoDAH, err := bm.DAHeader.ToProto()
-	if err != nil {
-		return nil, err
-	}
+	protoDAH := bm.DAHeader.ToProto()
 
 	pb := &tmproto.BlockMeta{
 		BlockID:   bm.BlockID.ToProto(),
