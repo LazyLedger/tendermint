@@ -132,11 +132,6 @@ func TestRetrieveBlockData(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		// TODO(Wondertan): remove this
-		if tc.squareSize > 8 {
-			continue
-		}
-
 		tc := tc
 		t.Run(fmt.Sprintf("%s size %d", tc.name, tc.squareSize), func(t *testing.T) {
 			ctx := context.Background()
@@ -168,7 +163,7 @@ func TestRetrieveBlockData(t *testing.T) {
 			colRoots := rootsToDigests(rawColRoots)
 
 			// limit with deadline retrieval specifically
-			ctx, cancel := context.WithTimeout(ctx, time.Second*2)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*6)
 			defer cancel()
 
 			rblockData, err := RetrieveBlockData(

@@ -17,6 +17,8 @@ import (
 
 const baseErrorMsg = "failure to retrieve block data:"
 
+var maxGoRoutines = 512
+
 var ErrEncounteredTooManyErrors = fmt.Errorf("%s %s", baseErrorMsg, "encountered too many errors")
 var ErrTimeout = fmt.Errorf("%s %s", baseErrorMsg, "timeout")
 
@@ -30,6 +32,7 @@ func RetrieveBlockData(
 ) (types.Data, error) {
 	edsWidth := len(dah.RowsRoots)
 	sc := newshareCounter(ctx, uint32(edsWidth))
+	sem := make(chan interface{}, maxGoRoutines)
 
 	// convert the row and col roots into Cids
 	rowRoots := dah.RowsRoots.Bytes()
@@ -37,16 +40,24 @@ func RetrieveBlockData(
 
 	// sample 1/4 of the total extended square by sampling half of the leaves in
 	// half of the rows
-	for _, row := range uniqueRandNumbers(edsWidth/2, edsWidth) {
-		for _, col := range uniqueRandNumbers(edsWidth/2, edsWidth) {
-			rootCid, err := plugin.CidFromNamespacedSha256(rowRoots[row])
-			if err != nil {
-				return types.Data{}, err
+	go func() {
+		for _, row := range uniqueRandNumbers(edsWidth/2, edsWidth) {
+			for _, col := range uniqueRandNumbers(edsWidth/2, edsWidth) {
+				rootCid, err := plugin.CidFromNamespacedSha256(rowRoots[row])
+				if err != nil {
+					select {
+					case <-sc.ctx.Done():
+					case sc.errc <- err:
+					}
+				}
+				sem <- struct{}{}
+				go func(rootCid cid.Cid, row uint32, col uint32) {
+					sc.retrieveShare(rootCid, true, row, col, dag)
+					<-sem
+				}(rootCid, row, col)
 			}
-
-			go sc.retrieveShare(rootCid, true, row, col, dag)
 		}
-	}
+	}()
 
 	// wait until enough data has been collected, too many errors encountered,
 	// or the timeout is reached
