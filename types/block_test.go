@@ -355,7 +355,6 @@ func TestHeaderHash(t *testing.T) {
 			Height:                3,
 			Time:                  time.Date(2019, 10, 13, 16, 14, 44, 0, time.UTC),
 			LastBlockID:           makeBlockID(make([]byte, tmhash.Size)),
-			LastPartSetHeader:     makePartSetHeader(6, make([]byte, tmhash.Size)),
 			LastCommitHash:        tmhash.Sum([]byte("last_commit_hash")),
 			DataHash:              tmhash.Sum([]byte("data_hash")),
 			NumOriginalDataShares: 4,
@@ -366,7 +365,7 @@ func TestHeaderHash(t *testing.T) {
 			LastResultsHash:       tmhash.Sum([]byte("last_results_hash")),
 			EvidenceHash:          tmhash.Sum([]byte("evidence_hash")),
 			ProposerAddress:       crypto.AddressHash([]byte("proposer_address")),
-		}, hexBytesFromString("CBE1A9A83217E1EEDE92B9F85B6519B6DA2B2AC8BF69421A1CB0227C5CD3B353")},
+		}, hexBytesFromString("0E5747B09FE96A3F1DC58DBB137A82825B6E046A753D52FBB0F4C692D5F6F57E")},
 		{"nil header yields nil", nil, nil},
 		{"nil ValidatorsHash yields nil", &Header{
 			Version:            tmversion.Consensus{Block: 1, App: 2},
@@ -374,7 +373,6 @@ func TestHeaderHash(t *testing.T) {
 			Height:             3,
 			Time:               time.Date(2019, 10, 13, 16, 14, 44, 0, time.UTC),
 			LastBlockID:        makeBlockID(make([]byte, tmhash.Size)),
-			LastPartSetHeader:  makePartSetHeader(6, make([]byte, tmhash.Size)),
 			LastCommitHash:     tmhash.Sum([]byte("last_commit_hash")),
 			DataHash:           tmhash.Sum([]byte("data_hash")),
 			ValidatorsHash:     nil,
@@ -455,7 +453,6 @@ func TestMaxHeaderBytes(t *testing.T) {
 		Height:                math.MaxInt64,
 		Time:                  timestamp,
 		LastBlockID:           makeBlockID(make([]byte, tmhash.Size)),
-		LastPartSetHeader:     makePartSetHeader(math.MaxInt32, make([]byte, tmhash.Size)),
 		LastCommitHash:        tmhash.Sum([]byte("last_commit_hash")),
 		DataHash:              tmhash.Sum([]byte("data_hash")),
 		NumOriginalDataShares: math.MaxInt64,
@@ -1042,9 +1039,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				LastBlockID: BlockID{
 					Hash: make([]byte, tmhash.Size),
 				},
-				LastPartSetHeader: PartSetHeader{
-					Hash: make([]byte, tmhash.Size+1),
-				},
 			},
 			true, "wrong PartSetHeader",
 		},
@@ -1055,9 +1049,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				ChainID: string(make([]byte, MaxChainIDLen)),
 				Height:  1,
 				LastBlockID: BlockID{
-					Hash: make([]byte, tmhash.Size),
-				},
-				LastPartSetHeader: PartSetHeader{
 					Hash: make([]byte, tmhash.Size),
 				},
 				LastCommitHash: make([]byte, tmhash.Size+1),
@@ -1073,9 +1064,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				LastBlockID: BlockID{
 					Hash: make([]byte, tmhash.Size),
 				},
-				LastPartSetHeader: PartSetHeader{
-					Hash: make([]byte, tmhash.Size),
-				},
 				LastCommitHash: make([]byte, tmhash.Size),
 				DataHash:       make([]byte, tmhash.Size+1),
 			},
@@ -1088,9 +1076,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				ChainID: string(make([]byte, MaxChainIDLen)),
 				Height:  1,
 				LastBlockID: BlockID{
-					Hash: make([]byte, tmhash.Size),
-				},
-				LastPartSetHeader: PartSetHeader{
 					Hash: make([]byte, tmhash.Size),
 				},
 				LastCommitHash: make([]byte, tmhash.Size),
@@ -1108,9 +1093,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				LastBlockID: BlockID{
 					Hash: make([]byte, tmhash.Size),
 				},
-				LastPartSetHeader: PartSetHeader{
-					Hash: make([]byte, tmhash.Size),
-				},
 				LastCommitHash:  make([]byte, tmhash.Size),
 				DataHash:        make([]byte, tmhash.Size),
 				EvidenceHash:    make([]byte, tmhash.Size),
@@ -1125,9 +1107,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				ChainID: string(make([]byte, MaxChainIDLen)),
 				Height:  1,
 				LastBlockID: BlockID{
-					Hash: make([]byte, tmhash.Size),
-				},
-				LastPartSetHeader: PartSetHeader{
 					Hash: make([]byte, tmhash.Size),
 				},
 				LastCommitHash:  make([]byte, tmhash.Size),
@@ -1147,9 +1126,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				LastBlockID: BlockID{
 					Hash: make([]byte, tmhash.Size),
 				},
-				LastPartSetHeader: PartSetHeader{
-					Hash: make([]byte, tmhash.Size),
-				},
 				LastCommitHash:     make([]byte, tmhash.Size),
 				DataHash:           make([]byte, tmhash.Size),
 				EvidenceHash:       make([]byte, tmhash.Size),
@@ -1166,9 +1142,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				ChainID: string(make([]byte, MaxChainIDLen)),
 				Height:  1,
 				LastBlockID: BlockID{
-					Hash: make([]byte, tmhash.Size),
-				},
-				LastPartSetHeader: PartSetHeader{
 					Hash: make([]byte, tmhash.Size),
 				},
 				LastCommitHash:     make([]byte, tmhash.Size),
@@ -1190,9 +1163,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				LastBlockID: BlockID{
 					Hash: make([]byte, tmhash.Size),
 				},
-				LastPartSetHeader: PartSetHeader{
-					Hash: make([]byte, tmhash.Size),
-				},
 				LastCommitHash:     make([]byte, tmhash.Size),
 				DataHash:           make([]byte, tmhash.Size),
 				EvidenceHash:       make([]byte, tmhash.Size),
@@ -1211,9 +1181,6 @@ func TestHeader_ValidateBasic(t *testing.T) {
 				ChainID: string(make([]byte, MaxChainIDLen)),
 				Height:  1,
 				LastBlockID: BlockID{
-					Hash: make([]byte, tmhash.Size),
-				},
-				LastPartSetHeader: PartSetHeader{
 					Hash: make([]byte, tmhash.Size),
 				},
 				LastCommitHash:     make([]byte, tmhash.Size),
